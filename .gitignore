@@ -1,0 +1,12 @@
+# macOS
+.DS_Store
+
+# Nothing proprietary should ever land here, but belt-and-suspenders:
+*.env
+.env*
+GoogleService-Info.plist
+serviceAccount*.json
+*-firebase-adminsdk-*.json
+*.p8
+*.p12
+*.mobileprovision
