@@ -29,6 +29,7 @@ iOS-native (SwiftUI + Unity), Firebase Cloud Functions backend, server-authorita
 - [Technology stack](#technology-stack)
 - [Architecture](#architecture)
 - [Features I built](#features-i-built)
+- [Proving correctness when green isn't proof](#proving-correctness-when-green-isnt-proof)
 - [Production problems I solved](#production-problems-i-solved)
 - [How I used and reviewed Claude Code](#how-i-used-and-reviewed-claude-code)
 - [Code examples](#code-examples)
@@ -38,12 +39,15 @@ iOS-native (SwiftUI + Unity), Firebase Cloud Functions backend, server-authorita
 
 ## Screenshots
 
-| | |
+| Lobby | Stack |
 |:---:|:---:|
-| ![Home lobby — coin economy, featured match, game grid](screenshots/01-home.png) | ![Stack — sprint mode, live opponent line race](screenshots/02-stack.png) |
-| **Lobby** — dual-economy header, featured match, ranked game tiles | **Stack** — sprint mode, piece queue, live line race |
-| ![Strike — real-time 1v1 air hockey](screenshots/03-strike.png) | ![Ranked progression — tier ladder and division progress](screenshots/04-ranks.png) |
-| **Strike** — real-time 1v1, first to 7 | **Ranks** — six-tier ladder, division progress |
+| <img src="screenshots/01-home.png" width="300" alt="Home lobby with dual-economy header and ranked game tiles"/> | <img src="screenshots/02-stack.png" width="300" alt="Stack sprint mode with piece queue and live line race"/> |
+| Dual-economy header, featured match, ranked game tiles | Sprint mode, piece queue, live line race |
+
+| Strike | Ranks |
+|:---:|:---:|
+| <img src="screenshots/03-strike.png" width="300" alt="Strike real-time 1v1 air hockey match"/> | <img src="screenshots/04-ranks.png" width="300" alt="Ranked progression showing tier ladder and division progress"/> |
+| Real-time 1v1, first to 7 | Six-tier ladder, division progress |
 
 ---
 
@@ -99,7 +103,8 @@ App Store Server Notifications V2 for refund clawback.
 
 **Testing** — 812 backend unit tests (`node:test`), 23 Firestore security-rules tests against the
 emulator, 274 standalone game-engine tests, plus cross-language golden-fixture parity suites.
-**1,109 tests passing.**
+**1,109 tests passing.** See [proving correctness](#proving-correctness-when-green-isnt-proof) for
+why the interesting ones aren't unit tests.
 
 ---
 
@@ -213,6 +218,43 @@ callables, and mutual payload guards that reject a request carrying the other ec
 **Social**
 - Friends, presence, private challenges that create real staked matches, invite referral rewards
 - Push notifications, in-app notification inbox, deep linking
+
+---
+
+## Proving correctness when green isn't proof
+
+Merit pays real money on the outcome of a simulation running on a device I don't control. There is no
+oracle for "was this run legitimate" — so most of the testing effort went into building checks where a
+wrong answer actually fails, rather than checks that pass because nothing threw.
+
+**Fixtures that can't be fudged.** Replay verification only works if two independent implementations
+of the same engine agree bit for bit. Storing `3.14159` in a fixture proves nothing; storing
+`0x400921FB54442D18` proves everything. Every checkpoint is a raw float bit pattern compared by byte
+equality with zero tolerance — no epsilon, because an epsilon large enough to hide a real divergence
+is large enough to hide the bug that eventually rejects an honest player.
+
+**Testing the wiring, not just the unit.** A perfectly correct security gate that nobody calls is
+worthless, and unit tests never catch that. So part of the suite scans the source tree and fails if
+any endpoint is declared without App Check enforcement, or if a cash-entry callable is added without
+the eligibility gates wired in. The failure mode being defended against is a future endpoint, not a
+current bug.
+
+**Adversarial inputs, not happy paths.** The tests that found real problems were the hostile ones:
+feeding a redaction layer a payload stuffed with processor IDs and KYC fields and asserting none
+survive in the output *or* anywhere in the serialized JSON; applying the same settlement twice and
+asserting the wallets are byte-identical to applying it once; asserting total value across both
+players is conserved so no path can mint money.
+
+**Reading the trace when the metric lies.** The "superhuman input rate" check was rejecting honest
+players. The logs showed why — held inputs auto-repeat, so one human gesture produced dozens of
+records. The fix collapsed machine repeats before rate-checking, and the same pass surfaced a real
+exploit the metric had never been aimed at: gravity was a client-side timer, so a modified client
+could omit ticks and play with no time pressure. A false positive and a false negative in the same
+metric, found by reading traces rather than by a failing test.
+
+**And green still isn't shipped.** A Statements feature was built, unit-tested, and declared done
+while its callables were never deployed. It failed in production because the functions did not exist.
+"Compiles and tests pass" became an explicitly insufficient definition of done.
 
 ---
 
